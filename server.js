@@ -6,10 +6,15 @@ const { removeBackground } = require('@imgly/background-removal-node');
 const schedule = require('node-schedule');
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
 
 const OUTPUT_DIR = 'outputs';
 const UPLOAD_DIR = 'uploads';
+
+// ✅ Ensure folders exist at server start
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+
+const upload = multer({ dest: UPLOAD_DIR });
 
 // Serve the output folder as static
 app.use(`/${OUTPUT_DIR}`, express.static(path.join(__dirname, OUTPUT_DIR)));
@@ -31,16 +36,12 @@ const clearFolder = (folderPath) => {
 // ✅ API to remove background and return JSON info
 app.post('/api/remove-background', upload.single('image'), async (req, res) => {
     try {
-        // 🧹 Clear only old output files — NOT uploads (don't delete uploaded image yet)
+        // 🧹 Clear only old output files (leave upload intact until processed)
         clearFolder(OUTPUT_DIR);
 
         const inputPath = req.file.path;
         const outputName = `${Date.now()}-output.png`;
         const outputPath = path.join(OUTPUT_DIR, outputName);
-
-        if (!fs.existsSync(OUTPUT_DIR)) {
-            fs.mkdirSync(OUTPUT_DIR);
-        }
 
         console.log(`Running removeBackground on: ${inputPath}`);
 
@@ -56,7 +57,7 @@ app.post('/api/remove-background', upload.single('image'), async (req, res) => {
         res.json({
             success: true,
             message: 'Background removed successfully',
-            fileUrl: `/outputs/${outputName}`,
+            fileUrl: `/${OUTPUT_DIR}/${outputName}`,
             filename: outputName
         });
 
@@ -88,8 +89,13 @@ schedule.scheduleJob('0 * * * *', () => {
     });
 });
 
+// ✅ Basic homepage
+app.get('/', (req, res) => {
+    res.send('🎉 Background Remover API is running. POST to /api/remove-background');
+});
+
 // ✅ Start server
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 API running at http://localhost:${PORT}/api/remove-background`);
 });
