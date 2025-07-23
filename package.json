@@ -1,3 +1,7 @@
+"scripts": {
+  "start": "node server.js"
+}
+
 {
   "dependencies": {
     "@imgly/background-removal-node": "^1.4.3",
