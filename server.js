@@ -9,19 +9,21 @@ const app = express();
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const OUTPUTS_DIR = path.join(__dirname, 'outputs');
 
-// Ensure directories exist
+// Ensure upload and output directories exist
 [UPLOADS_DIR, OUTPUTS_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 });
 
-// Allowed file types
+// Allowed MIME types
 const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOADS_DIR),
     filename: (req, file, cb) => {
+        const timestamp = Date.now();
         const ext = path.extname(file.originalname);
-        cb(null, `${Date.now()}-${file.fieldname}${ext}`);
+        const name = path.basename(file.originalname, ext);
+        cb(null, `${name}-${timestamp}${ext}`);
     }
 });
 
@@ -29,7 +31,7 @@ const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
         if (allowedMimeTypes.includes(file.mimetype)) cb(null, true);
-        else cb(new Error('Only JPEG, PNG, and WEBP files are supported.'));
+        else cb(new Error('Only JPG, PNG, and WEBP files are supported.'));
     }
 });
 
@@ -37,39 +39,47 @@ const upload = multer({
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/outputs', express.static(OUTPUTS_DIR));
 
+// Background removal endpoint
 app.post('/remove-background', upload.single('image'), async (req, res) => {
     try {
         const inputPath = req.file.path;
-        const outputFileName = `${Date.now()}-output.png`;
+        const ext = path.extname(req.file.originalname);
+        const baseName = path.basename(req.file.originalname, ext);
+        const outputFileName = `${baseName}-output.png`; // always output as PNG
         const outputPath = path.join(OUTPUTS_DIR, outputFileName);
+
+        console.log(`Processing: ${inputPath}`);
 
         const blob = await removeBackground(inputPath);
         const buffer = Buffer.from(await blob.arrayBuffer());
 
         fs.writeFileSync(outputPath, buffer);
-        fs.unlinkSync(inputPath); // Delete original upload
+        fs.unlinkSync(inputPath); // clean uploaded temp
 
         res.json({ success: true, fileUrl: `/outputs/${outputFileName}` });
     } catch (error) {
-        console.error('Error:', error.message);
+        console.error('Error removing background:', error.message);
         res.status(500).json({ success: false, error: 'Background removal failed.' });
     }
 });
 
-// Scheduled cleanup every hour
+// Clean up files older than 1 hour
 schedule.scheduleJob('0 * * * *', () => {
     const now = Date.now();
     const oneHour = 1000 * 60 * 60;
 
     [UPLOADS_DIR, OUTPUTS_DIR].forEach(dir => {
         fs.readdir(dir, (err, files) => {
-            if (err) return console.error(err);
+            if (err) return console.error(`Error reading ${dir}:`, err);
             files.forEach(file => {
                 const filePath = path.join(dir, file);
                 fs.stat(filePath, (err, stats) => {
-                    if (err) return console.error(err);
+                    if (err) return console.error(`Error stating file ${filePath}:`, err);
                     if (now - stats.mtimeMs > oneHour) {
-                        fs.unlink(filePath, err => err && console.error(err));
+                        fs.unlink(filePath, err => {
+                            if (err) console.error(`Error deleting file ${filePath}:`, err);
+                            else console.log(`Deleted old file: ${filePath}`);
+                        });
                     }
                 });
             });
