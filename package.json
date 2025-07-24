@@ -1,15 +1,19 @@
 {
   "name": "background-remover",
   "version": "1.0.0",
+  "description": "Node.js app to remove background from images using @imgly/background-removal-node",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@imgly/background-removal-node": "^1.4.3",
     "express": "^4.21.1",
     "multer": "^1.4.5-lts.1",
     "node-schedule": "^2.1.1"
-  }
+  },
+  "license": "MIT"
 }
