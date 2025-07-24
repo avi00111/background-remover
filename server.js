@@ -10,12 +10,12 @@ const app = express();
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const OUTPUTS_DIR = path.join(__dirname, 'outputs');
 
-// Ensure directories exist
+// Ensure folders exist
 [UPLOADS_DIR, OUTPUTS_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 });
 
-// Allowed image formats
+// Multer config for file uploads
 const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
 const storage = multer.diskStorage({
@@ -31,24 +31,24 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        if (allowedMimeTypes.includes(file.mimetype)) cb(null, true);
-        else cb(new Error('Only JPG, PNG, and WEBP files are supported.'));
+        if (allowedMimeTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only JPG, PNG, and WEBP images are allowed.'));
+        }
     }
 });
 
-// Serve output files
-app.use('/outputs', express.static(OUTPUTS_DIR));
-
-// ✅ Health check
+// ✅ Health check route
 app.get('/', (req, res) => {
-    res.send('🚀 Background Remover server is running.');
+    res.send('✅ Background Remover API is running.');
 });
 
-// ✅ Background removal route (with /api prefix)
+// ✅ Main background removal route
 app.post('/api/remove-background', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
-            return res.status(400).json({ success: false, error: 'No file uploaded' });
+            return res.status(400).json({ success: false, error: 'No file uploaded.' });
         }
 
         const inputPath = req.file.path;
@@ -57,24 +57,29 @@ app.post('/api/remove-background', upload.single('image'), async (req, res) => {
         const outputFileName = `${baseName}-output.png`;
         const outputPath = path.join(OUTPUTS_DIR, outputFileName);
 
-        console.log(`🔄 Removing background from: ${inputPath}`);
+        console.log(`📥 Received file: ${inputPath}`);
+        console.time('🛠️ Background removed');
 
         const blob = await removeBackground(inputPath);
         const buffer = Buffer.from(await blob.arrayBuffer());
 
         fs.writeFileSync(outputPath, buffer);
-        fs.unlinkSync(inputPath);
+        fs.unlinkSync(inputPath); // clean temp upload
 
-        console.log(`✅ Output saved to: ${outputPath}`);
+        console.timeEnd('🛠️ Background removed');
+        console.log(`✅ Output saved: ${outputPath}`);
 
         res.json({ success: true, fileUrl: `/outputs/${outputFileName}` });
     } catch (error) {
-        console.error('❌ Error:', error.message);
+        console.error('❌ Background removal error:', error);
         res.status(500).json({ success: false, error: 'Background removal failed.' });
     }
 });
 
-// ✅ Scheduled cleanup for files older than 1 hour
+// ✅ Serve output files statically
+app.use('/outputs', express.static(OUTPUTS_DIR));
+
+// ✅ Scheduled cleanup every hour
 schedule.scheduleJob('0 * * * *', () => {
     const now = Date.now();
     const oneHour = 1000 * 60 * 60;
@@ -85,11 +90,11 @@ schedule.scheduleJob('0 * * * *', () => {
             files.forEach(file => {
                 const filePath = path.join(dir, file);
                 fs.stat(filePath, (err, stats) => {
-                    if (err) return console.error(`Error stating file ${filePath}:`, err);
+                    if (err) return console.error(`Error stating ${filePath}:`, err);
                     if (now - stats.mtimeMs > oneHour) {
                         fs.unlink(filePath, err => {
                             if (err) console.error(`Error deleting ${filePath}:`, err);
-                            else console.log(`🗑️ Deleted old file: ${filePath}`);
+                            else console.log(`🧹 Deleted old file: ${filePath}`);
                         });
                     }
                 });
@@ -98,8 +103,8 @@ schedule.scheduleJob('0 * * * *', () => {
     });
 });
 
-// ✅ Start server
+// ✅ Start server on Railway-assigned port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:${PORT}`);
+    console.log(`🚀 Server is running on port ${PORT}`);
 });
